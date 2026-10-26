@@ -1,0 +1,478 @@
+:root {
+  color-scheme: light;
+}
+
+.stApp {
+  --aegis-blue: #014baa;
+  --aegis-cream: #f8f3f0;
+  --aegis-ink: #202a36;
+  --aegis-muted: #526171;
+  --aegis-border: #d8dfe8;
+  --aegis-surface: #fffdfb;
+  color: var(--aegis-ink);
+  background: var(--aegis-cream);
+}
+
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"] {
+  background: var(--aegis-cream);
+}
+
+[data-testid="stMainBlockContainer"] {
+  padding: clamp(1.25rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2rem) 2rem;
+}
+
+[data-testid="stSidebar"] {
+  border-right: 1px solid #013d8c;
+  background: var(--aegis-blue);
+}
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"],
+[data-testid="stSidebar"] [data-testid="stRadio"] label {
+  color: #ffffff;
+}
+
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+  color: #e5efff;
+}
+
+[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] {
+  border-color: #ffffff;
+  background: #ffffff;
+  color: var(--aegis-blue);
+}
+
+[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:hover {
+  border-color: #dceaff;
+  background: #dceaff;
+  color: #013d8c;
+}
+
+.stApp [data-testid="stSidebar"] h1,
+.stApp [data-testid="stSidebar"] h2,
+.stApp [data-testid="stSidebar"] h3,
+.stApp [data-testid="stSidebar"] h4 {
+  color: #ffffff;
+}
+
+.stApp [data-testid="stSidebar"] [data-testid="stRadioOption"] {
+  border-radius: 8px;
+  color: #ffffff;
+}
+
+.stApp [data-testid="stSidebar"] [data-testid="stRadioOption"]:hover,
+.stApp [data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"] {
+  background: rgb(248 243 240 / 14%);
+  box-shadow: inset 0 0 0 1px #dceaff;
+}
+
+.stApp [data-testid="stSidebar"] [data-testid="stRadioOption"]:focus-within {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.stApp [data-testid="stSidebar"] [data-testid="stCheckbox"] label {
+  color: #ffffff;
+}
+
+.stApp [data-testid="stSidebar"] input[type="radio"],
+.stApp [data-testid="stSidebar"] input[type="checkbox"] {
+  accent-color: var(--aegis-cream);
+}
+
+.stApp [data-testid="stSidebar"] label:has(input:disabled),
+.stApp [data-testid="stSidebar"] [data-testid="stRadioOption"][aria-disabled="true"] {
+  color: #d9e8ff;
+}
+
+.stApp [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:disabled {
+  border-color: #e5efff;
+  background: #e5efff;
+  color: #334a60;
+}
+
+.stApp [data-testid="stSidebar"] button:focus-visible,
+.stApp [data-testid="stSidebar"] [role="radio"]:focus-visible,
+.stApp [data-testid="stSidebar"] [role="checkbox"]:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.stApp h1,
+.stApp h2,
+.stApp h3 {
+  color: var(--aegis-blue);
+  letter-spacing: -0.02em;
+}
+
+[data-testid="stMarkdownContainer"] h2,
+[data-testid="stMarkdownContainer"] h3 {
+  margin-top: 1.1rem;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] {
+  border-color: var(--aegis-border);
+  border-radius: 14px;
+  background: var(--aegis-surface);
+  box-shadow: 0 3px 12px rgb(27 45 67 / 6%);
+}
+
+[data-testid="stMetric"] {
+  min-height: 108px;
+  padding: 15px;
+  border: 1px solid var(--aegis-border);
+  border-radius: 12px;
+  background: var(--aegis-surface);
+  box-shadow: 0 2px 9px rgb(27 45 67 / 5%);
+}
+
+[data-testid="stMetricLabel"] {
+  color: var(--aegis-muted);
+}
+
+[data-testid="stMetricValue"] {
+  color: var(--aegis-blue);
+}
+
+[data-testid="stAlert"] {
+  border-radius: 11px;
+}
+
+[data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea,
+[data-testid="stNumberInput"] input,
+[data-testid="stDateInput"] input,
+[data-testid="stTimeInput"] input,
+[data-testid="stSelectbox"] [data-baseweb="select"] > div,
+[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
+  min-height: 44px;
+  border-color: #b9c7d7;
+  border-radius: 9px;
+  background: #fffdfb;
+  color: var(--aegis-ink);
+}
+
+[data-testid="stTextInput"] input:focus-visible,
+[data-testid="stTextArea"] textarea:focus-visible,
+[data-testid="stNumberInput"] input:focus-visible,
+[data-testid="stDateInput"] input:focus-visible,
+[data-testid="stTimeInput"] input:focus-visible,
+[data-testid="stSelectbox"] [data-baseweb="select"]:focus-within,
+[data-testid="stMultiSelect"] [data-baseweb="select"]:focus-within {
+  outline: 3px solid rgb(1 75 170 / 24%);
+  outline-offset: 1px;
+  border-color: var(--aegis-blue);
+}
+
+.stApp input[type="checkbox"],
+.stApp input[type="radio"] {
+  accent-color: var(--aegis-blue);
+}
+
+[data-testid="stBaseButton-primary"] {
+  min-height: 46px;
+  border: 1px solid var(--aegis-blue);
+  border-radius: 10px;
+  background: var(--aegis-blue);
+  color: #ffffff;
+  font-weight: 700;
+  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+[data-testid="stBaseButton-primary"]:hover:not(:disabled) {
+  border-color: #013d8c;
+  background: #013d8c;
+  color: #ffffff;
+  box-shadow: 0 3px 10px rgb(1 75 170 / 20%);
+}
+
+[data-testid="stBaseButton-primary"]:focus-visible,
+[data-testid="stBaseButton-secondary"]:focus-visible,
+[data-testid="stSidebar"] button:focus-visible,
+[data-testid="stTabs"] button:focus-visible {
+  outline: 3px solid rgb(1 75 170 / 45%);
+  outline-offset: 2px;
+}
+
+[data-testid="stBaseButton-secondary"] {
+  min-height: 42px;
+  border-color: #b9c7d7;
+  border-radius: 9px;
+  color: var(--aegis-blue);
+}
+
+[data-testid="stBaseButton-secondary"]:hover:not(:disabled) {
+  border-color: var(--aegis-blue);
+  color: #013d8c;
+}
+
+[data-testid="stTabs"] [role="tab"] {
+  color: var(--aegis-muted);
+  font-weight: 600;
+}
+
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+  color: var(--aegis-blue);
+}
+
+[data-testid="stDataFrame"],
+[data-testid="stTable"] {
+  overflow: hidden;
+  border: 1px solid var(--aegis-border);
+  border-radius: 10px;
+}
+
+[data-testid="stIFrame"] iframe {
+  border: 1px solid var(--aegis-border);
+  border-radius: 12px;
+}
+
+.aegis-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 0.75rem;
+  padding: 16px 20px;
+  border: 1px solid #013d8c;
+  border-radius: 14px;
+  background: var(--aegis-blue);
+  box-shadow: 0 5px 16px rgb(1 45 105 / 18%);
+}
+
+.aegis-brand {
+  color: #ffffff;
+  font-size: clamp(1.7rem, 4vw, 2.1rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+
+.aegis-icon {
+  display: grid;
+  width: 34px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #ffffff;
+}
+
+.aegis-icon svg {
+  width: 30px;
+  height: 34px;
+}
+
+.aegis-header-copy {
+  min-width: 0;
+  flex: 1 1 270px;
+}
+
+.aegis-header-copy strong,
+.aegis-header-copy span {
+  display: block;
+  color: #ffffff;
+}
+
+.aegis-header-copy strong {
+  font-size: clamp(0.96rem, 2vw, 1.1rem);
+  line-height: 1.3;
+}
+
+.aegis-header-copy span {
+  margin-top: 4px;
+  color: #e5efff;
+  font-size: 0.84rem;
+}
+
+.aegis-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.aegis-data-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid #a9c6ed;
+  border-radius: 999px;
+  background: #edf4ff;
+  color: #12365f;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.aegis-route-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 12px;
+  margin: 8px 0 18px;
+}
+
+.aegis-route-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--aegis-border);
+  border-top: 3px solid var(--route-accent);
+  border-radius: 13px;
+  background: var(--aegis-surface);
+  box-shadow: 0 2px 9px rgb(27 45 67 / 5%);
+  transition: box-shadow 140ms ease, transform 140ms ease;
+}
+
+.aegis-route-card:hover {
+  transform: translateY(-1px);
+}
+
+.aegis-route-card.is-selected {
+  border-color: var(--aegis-blue);
+  box-shadow: 0 0 0 2px rgb(1 75 170 / 14%);
+}
+
+.aegis-route-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.aegis-route-category {
+  color: var(--aegis-blue);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.aegis-route-card h3 {
+  margin: 4px 0 10px;
+  color: var(--aegis-blue);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.aegis-selected-badge {
+  padding: 3px 8px;
+  border: 1px solid #b5d9bf;
+  border-radius: 999px;
+  background: #eaf6ed;
+  color: #1c6332;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.aegis-route-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.aegis-route-metric {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px;
+  border-radius: 8px;
+  background: var(--aegis-cream);
+}
+
+.aegis-route-metric span {
+  color: var(--aegis-muted);
+  font-size: 0.78rem;
+}
+
+.aegis-route-metric strong {
+  color: var(--aegis-blue);
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+
+.aegis-route-status {
+  margin: 10px 0 0;
+  color: var(--aegis-ink);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.aegis-route-card > p:not(.aegis-route-status) {
+  margin: 6px 0 0;
+  color: var(--aegis-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.aegis-route-card:focus-within,
+.aegis-route-card:hover {
+  box-shadow: 0 5px 16px rgb(27 45 67 / 10%);
+}
+
+.aegis-safety-notice {
+  margin: 1.5rem 0 0.5rem;
+  padding: 14px 16px;
+  border: 1px solid #e4c58d;
+  border-left: 4px solid #a45b00;
+  border-radius: 12px;
+  background: #fff5df;
+  color: #3e3020;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.aegis-safety-notice strong {
+  color: #754000;
+}
+
+.aegis-safety-notice p {
+  margin: 5px 0 0;
+  color: #3e3020;
+}
+
+@media (max-width: 768px) {
+  [data-testid="stMainBlockContainer"] {
+    padding: 1rem 1rem 1.5rem;
+  }
+
+  [data-testid="stMetric"] {
+    min-height: 94px;
+    padding: 12px;
+  }
+
+  .aegis-route-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .aegis-header {
+    gap: 10px;
+    padding: 13px 15px;
+  }
+
+  .aegis-status-row {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .aegis-safety-notice {
+    padding: 12px 13px;
+    font-size: 0.88rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+  }
+}

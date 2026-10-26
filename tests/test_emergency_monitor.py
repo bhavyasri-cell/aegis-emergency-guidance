@@ -204,6 +204,23 @@ class EmergencyMonitorTests(unittest.TestCase):
         self.assertFalse(assessment["flood_fresh"])
         self.assertFalse(assessment["alerts"])
 
+    def test_explicitly_stale_weather_is_not_used_for_screening(self):
+        weather = self._weather([
+            {"time": "2026-10-21T13:00", "rain_mm": 25.0},
+        ])
+        weather["is_stale"] = True
+        weather["cache_status"] = "stale"
+
+        assessment = assess_emergency_conditions(
+            weather,
+            self._flood(),
+            now=self.now,
+        )
+
+        self.assertEqual(assessment["status"], "Unknown")
+        self.assertFalse(assessment["weather_fresh"])
+        self.assertFalse(assessment["alerts"])
+
     def test_duplicate_alert_identity_is_stable_for_same_forecast_period(self):
         alert = {
             "hazard": "Heavy-rain forecast indicator",

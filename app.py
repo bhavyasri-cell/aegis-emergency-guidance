@@ -120,10 +120,13 @@ def cached_reverse_geocode(lat: float, lon: float):
     return reverse_geocode_location(lat, lon)
 
 
-@st.cache_data(show_spinner=False, ttl=900)
-def cached_weather_forecast(lat: float, lon: float):
-    """Caches Open-Meteo forecast responses for 15 minutes per coordinate pair."""
-    return get_weather(lat, lon)
+def cached_weather_forecast(
+    lat: float,
+    lon: float,
+    force_refresh: bool = False,
+):
+    """Fetch or reuse a forecast while respecting Open-Meteo cooldowns."""
+    return get_weather(lat, lon, force_refresh=force_refresh)
 
 
 @st.cache_data(show_spinner=False, ttl=900)
@@ -135,7 +138,6 @@ def cached_flood_forecast(lat: float, lon: float):
 def refresh_forecast_reports(targets: list, force_refresh: bool = False) -> dict:
     """Fetch missing selected-location forecasts and persist reports for both panels."""
     if force_refresh:
-        cached_weather_forecast.clear()
         cached_flood_forecast.clear()
 
     reports = st.session_state.get("emergency_monitor_reports", {})
@@ -145,7 +147,15 @@ def refresh_forecast_reports(targets: list, force_refresh: bool = False) -> dict
     if not isinstance(weather_reports, dict):
         weather_reports = {}
 
-    for _, latitude, longitude, location_name in targets:
+    unique_targets = {}
+    for target in targets:
+        _, latitude, longitude, _ = target
+        unique_targets.setdefault(
+            f"{latitude:.6f},{longitude:.6f}",
+            target,
+        )
+
+    for _, latitude, longitude, location_name in unique_targets.values():
         coordinate_key = f"{latitude:.6f},{longitude:.6f}"
         previous_entry = reports.get(coordinate_key, {})
         if not isinstance(previous_entry, dict):
@@ -153,8 +163,16 @@ def refresh_forecast_reports(targets: list, force_refresh: bool = False) -> dict
 
         weather_report = previous_entry.get("weather")
         if force_refresh or not isinstance(weather_report, dict):
-            weather_report = cached_weather_forecast(latitude, longitude)
-        if isinstance(weather_report, dict) and weather_report.get("success"):
+            weather_report = cached_weather_forecast(
+                latitude,
+                longitude,
+                force_refresh=force_refresh,
+            )
+        if (
+            isinstance(weather_report, dict)
+            and weather_report.get("success")
+            and not weather_report.get("is_stale")
+        ):
             save_cached_report("weather", latitude, longitude, weather_report)
         if isinstance(weather_report, dict):
             weather_reports[coordinate_key] = {
@@ -1031,10 +1049,37 @@ def render_route_cards(cards):
 def render_weather_report(location_label: str, report: dict):
     """Displays Open-Meteo observations and forecast without interpreting safety."""
     if not report.get("success"):
-        st.warning(f"{location_label}: {report.get('error', 'Weather data is unavailable.')}")
+        retry_after = report.get("retry_after_seconds")
+        retry_note = (
+            f" Try again in about {max(1, math.ceil(retry_after))} seconds."
+            if isinstance(retry_after, (int, float))
+            else ""
+        )
+        st.warning(
+            f"{location_label}: "
+            f"{report.get('error', 'Weather data is unavailable.')}"
+            f"{retry_note}"
+        )
         return
 
     retrieved_at = report.get("retrieved_at_utc")
+    if report.get("last_refresh_error"):
+        retry_after = report.get("retry_after_seconds")
+        retry_note = (
+            f" Retry is available in about {max(1, math.ceil(retry_after))} seconds."
+            if isinstance(retry_after, (int, float))
+            else ""
+        )
+        if report.get("is_stale"):
+            st.warning(
+                "STALE cached weather — the latest refresh failed: "
+                f"{report['last_refresh_error']}.{retry_note}"
+            )
+        else:
+            st.info(
+                "Showing a previously retrieved forecast; the latest refresh "
+                f"failed: {report['last_refresh_error']}.{retry_note}"
+            )
     if isinstance(retrieved_at, str):
         try:
             retrieval_time = datetime.fromisoformat(
@@ -1047,7 +1092,7 @@ def render_weather_report(location_label: str, report: dict):
                 (datetime.now(timezone.utc) - retrieval_time).total_seconds(),
             )
             age_minutes = int(age_seconds // 60)
-            if age_seconds > 30 * 60:
+            if report.get("is_stale") or age_seconds > 30 * 60:
                 st.warning(
                     "STALE cached weather report — the last successful Open-Meteo "
                     f"response was retrieved {age_minutes} minutes ago "
@@ -2527,12 +2572,19 @@ def main():
             st.session_state["weather_reports"] = saved_weather
 
         if weather_requested and not offline_mode:
-            cached_weather_forecast.clear()
             reports = st.session_state.setdefault("weather_reports", {})
             with st.spinner("Retrieving weather from Open-Meteo..."):
+                requested_coordinates = set()
                 for label, latitude, longitude, location_name in weather_targets:
                     coordinate_key = f"{latitude:.6f},{longitude:.6f}"
-                    report = cached_weather_forecast(latitude, longitude)
+                    if coordinate_key in requested_coordinates:
+                        continue
+                    requested_coordinates.add(coordinate_key)
+                    report = cached_weather_forecast(
+                        latitude,
+                        longitude,
+                        force_refresh=True,
+                    )
                     reports[coordinate_key] = {
                         "location_name": location_name,
                         "report": report,

@@ -53,7 +53,10 @@ credentials in Render's environment settings.
   blocked-road rerouting.
 - `weather_service.py` and `emergency_monitor.py` — Open-Meteo weather and
   river-discharge forecasts, displayed as forecast information or screening
-  indicators rather than official warnings.
+  indicators rather than official warnings. Weather responses are cached per
+  coordinate for 15 minutes; failed requests use a bounded cooldown, honor
+  `Retry-After` when supplied, and identify any retained report as cached or
+  stale.
 - `disaster_alert_service.py` — location-based records from the NDMA SACHET
   portal, including report freshness, validity, and available source geometry.
 - `offline_data.py` and `data/aegis_offline.sqlite3` — imported local GeoJSON
@@ -107,6 +110,10 @@ checked separately.
 
 - OSRM/Nominatim availability and service policies apply; no live traffic,
   verified closures, or guaranteed route availability is provided.
+- Open-Meteo may return HTTP 429 due to provider-side limits. AEGIS avoids
+  repeated refreshes during its cooldown and keeps the last successful report
+  visibly cached or stale when available; this cannot remove provider-side
+  rate limits.
 - User-entered hazard locations and available alert geometry are not a
   comprehensive hazard map. A route without a reported intersection is not
   thereby verified safe.

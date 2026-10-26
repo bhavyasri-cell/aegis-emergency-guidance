@@ -1,10 +1,11 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from unittest.mock import Mock, patch
 
 import requests
 
-from weather_service import get_weather
+from weather_service import clear_weather_cache, get_weather
 
 
 class WeatherServiceTests(unittest.TestCase):
@@ -12,7 +13,11 @@ class WeatherServiceTests(unittest.TestCase):
         response = Mock()
         response.status_code = status_code
         response.json.return_value = payload
+        response.headers = {}
         return response
+
+    def setUp(self):
+        clear_weather_cache()
 
     @patch("weather_service.requests.get")
     def test_valid_coordinates_return_current_and_hourly_weather(self, get):
@@ -101,6 +106,117 @@ class WeatherServiceTests(unittest.TestCase):
         self.assertIn("HTTP 503", report["error"])
 
     @patch("weather_service.requests.get")
+    def test_http_429_honors_retry_after_and_blocks_manual_retry(self, get):
+        response = self._response({}, status_code=429)
+        response.headers = {"Retry-After": "120"}
+        get.return_value = response
+
+        first_report = get_weather(28.6, 77.2)
+        retry_report = get_weather(28.6, 77.2, force_refresh=True)
+
+        self.assertFalse(first_report["success"])
+        self.assertIn("rate limit", first_report["error"])
+        self.assertAlmostEqual(first_report["retry_after_seconds"], 120, delta=1)
+        self.assertFalse(retry_report["success"])
+        self.assertGreater(retry_report["retry_after_seconds"], 0)
+        get.assert_called_once()
+
+    @patch("weather_service.requests.get")
+    def test_http_429_retry_after_http_date_is_parsed(self, get):
+        retry_time = datetime.now(timezone.utc) + timedelta(minutes=2)
+        response = self._response({}, status_code=429)
+        response.headers = {"Retry-After": format_datetime(retry_time, usegmt=True)}
+        get.return_value = response
+
+        report = get_weather(28.6, 77.2)
+
+        self.assertTrue(115 <= report["retry_after_seconds"] <= 120)
+
+    @patch("weather_service.requests.get")
+    def test_refresh_failure_preserves_last_success_as_explicit_cached_data(self, get):
+        successful_response = self._response({
+            "current": {
+                "time": "2026-10-21T12:00",
+                "temperature_2m": 29,
+            },
+        })
+        limited_response = self._response({}, status_code=429)
+        limited_response.headers = {"Retry-After": "90"}
+        get.side_effect = [successful_response, limited_response]
+
+        original = get_weather(28.6, 77.2)
+        refreshed = get_weather(28.6, 77.2, force_refresh=True)
+
+        self.assertTrue(original["success"])
+        self.assertTrue(refreshed["success"])
+        self.assertFalse(refreshed["is_stale"])
+        self.assertEqual(refreshed["cache_status"], "cached")
+        self.assertIn("HTTP 429", refreshed["last_refresh_error"])
+        self.assertEqual(
+            refreshed["retrieved_at_utc"],
+            original["retrieved_at_utc"],
+        )
+
+    @patch("weather_service.requests.get")
+    def test_failed_refresh_marks_expired_success_as_stale(self, get):
+        successful_response = self._response({
+            "current": {
+                "time": "2026-10-21T12:00",
+                "temperature_2m": 29,
+            },
+        })
+        limited_response = self._response({}, status_code=429)
+        limited_response.headers = {"Retry-After": "90"}
+        get.side_effect = [successful_response, limited_response]
+
+        with patch("weather_service.WEATHER_CACHE_TTL_SECONDS", 0):
+            get_weather(28.6, 77.2)
+            refreshed = get_weather(28.6, 77.2, force_refresh=True)
+
+        self.assertTrue(refreshed["success"])
+        self.assertTrue(refreshed["is_stale"])
+        self.assertEqual(refreshed["cache_status"], "stale")
+        self.assertIn("HTTP 429", refreshed["last_refresh_error"])
+
+    @patch("weather_service.requests.get")
+    def test_backoff_is_bounded_and_service_recovers_after_cooldown(self, get):
+        get.side_effect = [
+            self._response({}, status_code=503),
+            self._response({
+                "current": {
+                    "time": "2026-10-21T12:00",
+                    "temperature_2m": 29,
+                },
+            }),
+        ]
+
+        with patch("weather_service.time.monotonic", side_effect=[100.0, 131.0]):
+            failed = get_weather(28.6, 77.2)
+            recovered = get_weather(28.6, 77.2)
+
+        self.assertFalse(failed["success"])
+        self.assertEqual(failed["retry_after_seconds"], 30)
+        self.assertTrue(recovered["success"])
+        self.assertEqual(get.call_count, 2)
+
+    @patch("weather_service.requests.get")
+    def test_successful_forecast_is_reused_for_same_coordinates(self, get):
+        get.return_value = self._response({
+            "current": {
+                "time": "2026-10-21T12:00",
+                "temperature_2m": 29,
+            },
+        })
+
+        first = get_weather(28.6, 77.2)
+        second = get_weather(28.6, 77.2)
+
+        self.assertTrue(first["success"])
+        self.assertTrue(second["success"])
+        self.assertEqual(second["cache_status"], "cached")
+        get.assert_called_once()
+
+    @patch("weather_service.requests.get")
     def test_timeout_is_reported_gracefully(self, get):
         get.side_effect = requests.exceptions.Timeout()
 
@@ -168,6 +284,20 @@ class WeatherServiceTests(unittest.TestCase):
 
         self.assertFalse(report["success"])
         self.assertIn("Invalid parameter", report["error"])
+
+    @patch("weather_service.requests.get")
+    def test_invalid_json_is_reported_and_throttled(self, get):
+        response = self._response({})
+        response.json.side_effect = ValueError("invalid JSON")
+        get.return_value = response
+
+        first = get_weather(28.6, 77.2)
+        second = get_weather(28.6, 77.2, force_refresh=True)
+
+        self.assertFalse(first["success"])
+        self.assertIn("invalid JSON", first["error"])
+        self.assertFalse(second["success"])
+        get.assert_called_once()
 
 
 if __name__ == "__main__":

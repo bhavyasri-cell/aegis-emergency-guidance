@@ -181,6 +181,8 @@ def _has_timezone(value: object) -> bool:
 def _report_is_fresh(report: object, now: datetime) -> bool:
     if not isinstance(report, dict) or not report.get("success"):
         return False
+    if report.get("is_stale") or report.get("cache_status") == "stale":
+        return False
     updated_at = _parse_timestamp(
         report.get("retrieved_at_utc") or report.get("checked_at_utc")
     )

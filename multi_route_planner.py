@@ -136,17 +136,99 @@ def check_route_hazard_proximity(
 
 def are_routes_distinct(coords1: List[List[float]], coords2: List[List[float]], threshold_km: float = 0.15) -> bool:
     """
-    Determines if two routes are meaningfully distinct rather than duplicate paths.
-    Checks maximum separation between sample waypoints.
+    Compares routes at evenly spaced points so different vertex density or a
+    shared midpoint does not make distinct provider geometries look identical.
     """
     if not coords1 or not coords2:
         return False
 
-    # Sample midpoint comparison
-    mid1 = coords1[len(coords1) // 2]
-    mid2 = coords2[len(coords2) // 2]
-    sep = haversine_distance_km(mid1[0], mid1[1], mid2[0], mid2[1])
-    return sep >= threshold_km
+    def resample(coords: List[List[float]], sample_count: int = 51):
+        points = []
+        for point in coords:
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                return None
+            try:
+                latitude, longitude = float(point[0]), float(point[1])
+            except (TypeError, ValueError):
+                return None
+            if not (
+                math.isfinite(latitude)
+                and math.isfinite(longitude)
+                and -90 <= latitude <= 90
+                and -180 <= longitude <= 180
+            ):
+                return None
+            points.append((latitude, longitude))
+        if not points:
+            return None
+        cumulative = [0.0]
+        for start, end in zip(points, points[1:]):
+            cumulative.append(
+                cumulative[-1]
+                + haversine_distance_km(start[0], start[1], end[0], end[1])
+            )
+
+        total_distance = cumulative[-1]
+        if total_distance == 0:
+            return [points[0]] * sample_count
+
+        samples = []
+        segment_index = 0
+        for sample_index in range(sample_count):
+            target = total_distance * sample_index / (sample_count - 1)
+            while (
+                segment_index < len(points) - 2
+                and cumulative[segment_index + 1] < target
+            ):
+                segment_index += 1
+            segment_distance = (
+                cumulative[segment_index + 1] - cumulative[segment_index]
+            )
+            fraction = (
+                0.0
+                if segment_distance == 0
+                else (target - cumulative[segment_index]) / segment_distance
+            )
+            start_lat, start_lon = points[segment_index]
+            end_lat, end_lon = points[segment_index + 1]
+            samples.append((
+                start_lat + (end_lat - start_lat) * fraction,
+                start_lon + (end_lon - start_lon) * fraction,
+            ))
+        return samples
+
+    samples1 = resample(coords1)
+    samples2 = resample(coords2)
+    if samples1 is None or samples2 is None:
+        return False
+    return any(
+        haversine_distance_km(lat1, lon1, lat2, lon2) >= threshold_km
+        for (lat1, lon1), (lat2, lon2) in zip(samples1, samples2)
+    )
+
+
+def count_distinct_destination_routes(routes: Dict[str, Dict]) -> int:
+    """Count distinct routes to the primary destination, excluding aliases/shelters."""
+    return sum(
+        1
+        for route_id, route in routes.items()
+        if route_id in {"primary", "alt_1", "alt_2", "alt_3", "hazard_avoid"}
+        and not route.get("alias_of")
+    )
+
+
+def resolve_route_selection(
+    routes: Dict[str, Dict], selected_route_id: str
+) -> Tuple[Optional[str], Optional[Dict]]:
+    """Return the requested route, falling back safely when that option is absent."""
+    if selected_route_id in routes:
+        return selected_route_id, routes[selected_route_id]
+    if "primary" in routes:
+        return "primary", routes["primary"]
+    if routes:
+        route_id = next(iter(routes))
+        return route_id, routes[route_id]
+    return None, None
 
 
 def query_osrm_via(start_lat: float, start_lon: float, via_lat: float, via_lon: float, dest_lat: float, dest_lon: float) -> Optional[Dict]:
@@ -210,12 +292,27 @@ def generate_real_world_multi_routes(
     h_rad = hazard_info.get("radius_km", 0.5) if hazard_info else 0.5
     provider_routes = [primary, *primary.get("alternatives", [])]
     route_specs = [
-        ("primary", "Primary OSRM Route", "#2f855a"),
+        ("primary", "Shortest-Distance OSRM Route", "#2f855a"),
         ("alt_1", "OSRM Alternative Route 1", "#3182ce"),
         ("alt_2", "OSRM Alternative Route 2", "#805ad5"),
+        ("alt_3", "OSRM Alternative Route 3", "#d53f8c"),
     ]
     accepted_provider_routes = []
-    for provider_route, (route_id, name, color) in zip(provider_routes, route_specs):
+    if not primary.get("route_coords") or not primary.get("success"):
+        return {"error": "Routing service did not return a usable primary route."}
+    usable_provider_routes = [
+        route
+        for route in provider_routes[:4]
+        if route.get("success") and route.get("route_coords")
+    ]
+    usable_provider_routes.sort(
+        key=lambda route: route.get(
+            "distance_m",
+            (route.get("distance_km") or math.inf) * 1000,
+        )
+    )
+
+    for provider_route in usable_provider_routes:
         if not provider_route.get("route_coords"):
             continue
         if any(
@@ -225,6 +322,7 @@ def generate_real_world_multi_routes(
             for accepted in accepted_provider_routes
         ):
             continue
+        route_id, name, color = route_specs[len(accepted_provider_routes)]
         hit, distance = check_route_hazard_proximity(
             provider_route["route_coords"], h_lat, h_lon, h_rad
         )
@@ -275,16 +373,18 @@ def generate_real_world_multi_routes(
         if clear_candidates:
             # Pick shortest clear candidate
             best_clear = min(clear_candidates, key=lambda x: x["distance_km"])
+            best_clear_id = best_clear["id"]
             routes["hazard_avoid"] = {
                 "id": "hazard_avoid",
-                "name": "Hazard-Bypassing Route",
-                "color": "#dd6b20",  # Coral / Amber
+                "name": "Hazard-Avoiding Route (existing corridor)",
+                "color": best_clear["color"],
                 "distance_km": best_clear["distance_km"],
                 "duration_mins": best_clear["duration_mins"],
                 "route_coords": best_clear["route_coords"],
                 "steps": best_clear["steps"],
                 "hazard_status": f"🛡️ Actively avoids {hazard_info.get('description', 'simulated hazard zone')} (buffer: {h_rad*1000:.0f}m)",
                 "is_compromised": False,
+                "alias_of": best_clear_id,
                 "rationale": f"Explicitly verified to remain outside the {h_rad*1000:.0f}m radius of the simulated hazard zone.",
                 "safety_disclaimer": "Simulated hazard avoidance only. Unverified against real-world disaster conditions.",
             }
@@ -301,19 +401,35 @@ def generate_real_world_multi_routes(
             bypass = query_osrm_via(start_lat, start_lon, bypass_lat, bypass_lon, dest_lat, dest_lon)
             if bypass:
                 b_hit, b_dist = check_route_hazard_proximity(bypass["route_coords"], h_lat, h_lon, h_rad)
-                routes["hazard_avoid"] = {
-                    "id": "hazard_avoid",
-                    "name": "Hazard-Bypassing Route (Detour)",
-                    "color": "#dd6b20",  # Coral / Amber
-                    "distance_km": bypass["distance_km"],
-                    "duration_mins": bypass["duration_mins"],
-                    "route_coords": bypass["route_coords"],
-                    "steps": bypass["steps"],
-                    "hazard_status": f"🛡️ Calculated bypass around {hazard_info.get('description', 'simulated hazard')} (separation: {b_dist*1000:.0f}m)",
-                    "is_compromised": b_hit,
-                    "rationale": "Detour specifically routed away from the simulated danger zone.",
-                    "safety_disclaimer": "Calculated against simulated hazard coordinates only.",
-                }
+                if not b_hit and all(
+                    are_routes_distinct(
+                        route["route_coords"], bypass["route_coords"]
+                    )
+                    for route in accepted_provider_routes
+                ):
+                    routes["hazard_avoid"] = {
+                        "id": "hazard_avoid",
+                        "name": "Hazard-Bypassing Route (Detour)",
+                        "color": "#dd6b20",
+                        "distance_km": bypass["distance_km"],
+                        "duration_mins": bypass["duration_mins"],
+                        "route_coords": bypass["route_coords"],
+                        "steps": bypass["steps"],
+                        "hazard_status": (
+                            f"Calculated bypass around "
+                            f"{hazard_info.get('description', 'simulated hazard')} "
+                            f"(separation: {b_dist * 1000:.0f} m)"
+                        ),
+                        "is_compromised": False,
+                        "rationale": (
+                            "Detour specifically routed outside the "
+                            "user-specified simulated danger buffer."
+                        ),
+                        "safety_disclaimer": (
+                            "Simulated hazard avoidance only; current road "
+                            "conditions and safety are not verified."
+                        ),
+                    }
 
     # 5. Candidate Shelters / Nearest Reachable Shelter Evaluation
     if candidate_shelters:

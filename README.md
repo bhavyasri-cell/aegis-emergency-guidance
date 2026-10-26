@@ -72,6 +72,12 @@ rate-limited, delayed, or changed. Route calculations, forecasts, and alert
 records are shown with their available source and freshness context; the
 absence of a report does not mean an area is safe.
 
+Real-world route planning requests up to three OSRM alternatives, but a
+provider may return only one usable route for a location pair. AEGIS displays
+only valid, distinct provider geometries; it does not invent real-world
+alternatives. Distances are used to identify the shortest returned route, and
+travel times remain OSRM estimates without live traffic verification.
+
 No API key is required by the currently integrated providers. Set
 `NOMINATIM_CONTACT` to a real project contact when making Nominatim requests,
 in accordance with its usage policy. Do not put secrets in source code or

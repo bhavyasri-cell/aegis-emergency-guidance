@@ -28,8 +28,10 @@ import folium
 import streamlit.components.v1 as components
 from multi_route_planner import (
     check_route_hazard_proximity,
+    count_distinct_destination_routes,
     generate_real_world_multi_routes,
     generate_simulated_k_shortest_paths,
+    resolve_route_selection,
 )
 from real_routing import geocode_location, reverse_geocode_location
 from emergency_monitor import (
@@ -91,23 +93,12 @@ SIMULATED_COORDINATES = {
 }
 SIMULATED_MAP_CENTER = (37.7770, -122.4115)
 _APP_DIRECTORY = Path(__file__).resolve().parent
-_LOCATION_COMPONENT_CANDIDATES = (
-    _APP_DIRECTORY / "location_component",
-    _APP_DIRECTORY.parent / "location_component",
-)
-_LOCATION_COMPONENT_PATH = next(
-    (
-        candidate
-        for candidate in _LOCATION_COMPONENT_CANDIDATES
-        if (candidate / "index.html").is_file()
-    ),
-    _LOCATION_COMPONENT_CANDIDATES[0],
-)
+_LOCATION_COMPONENT_PATH = _APP_DIRECTORY / "location_component"
 if not (_LOCATION_COMPONENT_PATH / "index.html").is_file():
     raise FileNotFoundError(
         "The browser geolocation component is missing. Expected "
-        f"{_LOCATION_COMPONENT_PATH / 'index.html'}. Deploy the "
-        "location_component directory alongside app.py."
+        f"{_LOCATION_COMPONENT_PATH / 'index.html'}. Include the "
+        "location_component directory in the repository root alongside app.py."
     )
 _browser_location_component = components.declare_component(
     "browser_location_picker",
@@ -320,37 +311,64 @@ def build_multi_route_map(
 
     all_lats, all_lons = [start_lat, dest_lat], [start_lon, dest_lon]
 
-    # 1. Render Routes
-    # Order rendering so the highlighted route is drawn on top
-    route_keys = list(routes_dict.keys())
-    if highlight_route_id in route_keys:
-        route_keys.remove(highlight_route_id)
-        route_keys.append(highlight_route_id)  # Draw last to be topmost
+    # Draw longer alternatives first, then the selected corridor, so shared
+    # road segments remain visible and the selected route is emphasized.
+    route_keys = [
+        route_id
+        for route_id, route in routes_dict.items()
+        if not route.get("alias_of")
+        and len(route.get("route_coords", [])) >= 2
+    ]
+    selected_layer_id = routes_dict.get(highlight_route_id, {}).get(
+        "alias_of",
+        highlight_route_id,
+    )
+    route_keys.sort(
+        key=lambda route_id: routes_dict[route_id].get("distance_km") or 0,
+        reverse=True,
+    )
+    if selected_layer_id in route_keys:
+        route_keys.remove(selected_layer_id)
+        route_keys.append(selected_layer_id)
 
     for r_key in route_keys:
         r = routes_dict[r_key]
-        coords = r.get("route_coords", [])
-        if not coords:
-            continue
+        is_selected = (
+            highlight_route_id == "all" or selected_layer_id == r_key
+        )
+        folium.PolyLine(
+            locations=r["route_coords"],
+            color="#ffffff",
+            weight=(9 if is_selected else 7) + 4,
+            opacity=0.95,
+            interactive=False,
+        ).add_to(m)
 
-        is_selected = (highlight_route_id == "all") or (highlight_route_id == r_key)
-
-        # Visual styling: selected route is thick and vivid; non-selected routes are thinner & semi-transparent
-        if highlight_route_id == "all":
-            line_weight = 6
-            line_opacity = 0.8
-        elif is_selected:
-            line_weight = 8
-            line_opacity = 0.95
-        else:
-            line_weight = 4
-            line_opacity = 0.45
+    for r_key in route_keys:
+        r = routes_dict[r_key]
+        coords = r["route_coords"]
+        is_selected = (
+            highlight_route_id == "all" or selected_layer_id == r_key
+        )
+        line_weight = 9 if is_selected else 7
+        line_opacity = 0.98 if is_selected else 0.9
 
         tooltip_text = (
-            f"<b>{r['name']}</b><br/>"
-            f"Distance: {r['distance_km']} km | Est. Time: {r['duration_mins']} min<br/>"
-            f"<i>{r['hazard_status'] if hazard_info else 'No user-provided hazard data; not evaluated'}</i>"
+            f"<b>{html.escape(str(r.get('name', r_key)))}</b><br/>"
+            f"Distance: {html.escape(str(r.get('distance_km', 'Unavailable')))} km"
         )
+        duration = r.get("duration_mins")
+        tooltip_text += (
+            f" | Est. Time: {html.escape(str(duration))} min"
+            if duration is not None
+            else " | Est. Time: unavailable"
+        )
+        hazard_status = (
+            r.get("hazard_status", "No user-provided hazard data; not evaluated")
+            if hazard_info
+            else "No user-provided hazard data; not evaluated"
+        )
+        tooltip_text += f"<br/><i>{html.escape(str(hazard_status))}</i>"
         intersecting_alerts = [
             alert
             for alert in (official_alerts or [])
@@ -367,7 +385,7 @@ def build_multi_route_map(
 
         folium.PolyLine(
             locations=coords,
-            color=r["color"],
+            color=r.get("color", "#014baa"),
             weight=line_weight,
             opacity=line_opacity,
             tooltip=folium.Tooltip(tooltip_text),
@@ -907,30 +925,17 @@ def render_multi_route_legend(routes_dict: dict, hazard_info: dict = None, shelt
     Renders a compact, responsive, and clearly labeled legend for the Multi-Route map.
     Eliminates CommonMark code-block indentation bugs and pairs each symbol with clear text.
     """
-    route_items = [
-        '<span style="display:inline-flex; align-items:center; gap:6px;">'
-        '<span style="display:inline-block; width:13px; height:13px; border-radius:3px; background-color:#2f855a;"></span>'
-        '<span>🟢 <b>Shortest-Distance Route</b></span></span>',
-        '<span style="display:inline-flex; align-items:center; gap:6px;">'
-        '<span style="display:inline-block; width:13px; height:13px; border-radius:3px; background-color:#3182ce;"></span>'
-        '<span>🔵 <b>Alternative Route 1</b></span></span>',
-        '<span style="display:inline-flex; align-items:center; gap:6px;">'
-        '<span style="display:inline-block; width:13px; height:13px; border-radius:3px; background-color:#805ad5;"></span>'
-        '<span>🟣 <b>Alternative Route 2</b></span></span>',
-    ]
-
-    if "hazard_avoid" in routes_dict:
+    route_items = []
+    for route_id, route in routes_dict.items():
+        if route.get("alias_of") or len(route.get("route_coords", [])) < 2:
+            continue
+        color = html.escape(str(route.get("color", "#014baa")), quote=True)
+        name = html.escape(str(route.get("name", route_id)))
         route_items.append(
             '<span style="display:inline-flex; align-items:center; gap:6px;">'
-            '<span style="display:inline-block; width:13px; height:13px; border-radius:3px; background-color:#dd6b20;"></span>'
-            '<span>🟠 <b>Hazard-Avoiding Route</b></span></span>'
-        )
-
-    if "nearest_shelter" in routes_dict:
-        route_items.append(
-            '<span style="display:inline-flex; align-items:center; gap:6px;">'
-            '<span style="display:inline-block; width:13px; height:13px; border-radius:3px; background-color:#319795;"></span>'
-            '<span>🔷 <b>Nearest Reachable Shelter Route</b></span></span>'
+            '<span style="display:inline-block; width:24px; height:5px; '
+            f'border-radius:3px; background-color:{color};"></span>'
+            f"<span><b>{name}</b></span></span>"
         )
 
     marker_items = [
@@ -2115,10 +2120,15 @@ def main():
     render_data_status_summary()
     local_summary = database_summary()
     st.sidebar.caption(
-        f"Local data: {local_summary['road_segments']} road segments · "
+        f"Offline dataset: {local_summary['road_segments']} road segments · "
         f"{local_summary['places']} places · "
         f"{local_summary['shelters']} shelters"
     )
+    if not local_summary["road_segments"] and not local_summary["places"]:
+        st.sidebar.caption(
+            "No offline geographic dataset is installed. This does not affect "
+            "online OpenStreetMap/OSRM routing."
+        )
     if local_summary.get("coverage_bounds"):
         coverage = local_summary["coverage_bounds"]
         st.sidebar.caption(
@@ -2325,22 +2335,6 @@ def main():
             st.sidebar.caption(
                 f"ℹ️ Hazard Metadata: Source: Simulated User Input | Recorded: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Status: Unverified"
             )
-
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("Map Highlighting")
-        highlight_option = st.sidebar.selectbox(
-            "Highlight Route on Map:",
-            options=[
-                "All Routes (Overview)",
-                "Primary Route (Shortest Distance)",
-                "Alternative Route 1 (Lateral Corridor A)",
-                "Alternative Route 2 (Lateral Corridor B)",
-                "Hazard-Bypassing Route",
-                "Nearest Reachable Shelter",
-            ],
-            index=0,
-            help="Select an individual route to emphasize and use for voice navigation. Overview mode uses the primary route for guidance.",
-        )
 
         # Resolve addresses only after an explicit route-planning request.
         if not dest_addr.strip():
@@ -2787,6 +2781,37 @@ def main():
                 )
             )
 
+        route_selection_labels = {"all": "All Routes (Overview)"}
+        if "primary" in routes_dict:
+            route_selection_labels["primary"] = "Primary Route (Shortest Distance)"
+        if "alt_1" in routes_dict:
+            route_selection_labels["alt_1"] = "Alternative Route 1 (OSRM)"
+        if "alt_2" in routes_dict:
+            route_selection_labels["alt_2"] = "Alternative Route 2 (OSRM)"
+        if "alt_3" in routes_dict:
+            route_selection_labels["alt_3"] = "Alternative Route 3 (OSRM)"
+        if "hazard_avoid" in routes_dict:
+            route_selection_labels["hazard_avoid"] = "Hazard-Bypassing Route"
+        if "nearest_shelter" in routes_dict:
+            route_selection_labels["nearest_shelter"] = "Nearest Reachable Shelter"
+        route_label_to_id = {
+            label: route_id for route_id, label in route_selection_labels.items()
+        }
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Map Highlighting")
+        if st.session_state.get("route_map_highlight") not in route_label_to_id:
+            st.session_state["route_map_highlight"] = "All Routes (Overview)"
+        highlight_option = st.sidebar.selectbox(
+            "Highlight Route on Map:",
+            options=list(route_label_to_id),
+            index=0,
+            key="route_map_highlight",
+            help=(
+                "Select a route to emphasize and use for voice navigation. "
+                "Only routes available for this location pair are listed."
+            ),
+        )
+
         official_map_alerts = render_official_alerts_panel(
             official_alert_targets,
             routes_dict,
@@ -2801,27 +2826,30 @@ def main():
             )
         }
 
-        # Determine route ID from highlight selectbox
-        highlight_id_map = {
-            "All Routes (Overview)": "all",
-            "Primary Route (Shortest Distance)": "primary",
-            "Alternative Route 1 (Lateral Corridor A)": "alt_1",
-            "Alternative Route 2 (Lateral Corridor B)": "alt_2",
-            "Hazard-Bypassing Route": "hazard_avoid",
-            "Nearest Reachable Shelter": "nearest_shelter",
-        }
-        active_highlight_id = highlight_id_map.get(highlight_option, "all")
-        selected_route_id = (
-            active_highlight_id
-            if active_highlight_id in routes_dict
-            else "primary"
+        active_highlight_id = route_label_to_id.get(highlight_option, "all")
+        selected_route_id, selected_route_obj = resolve_route_selection(
+            routes_dict,
+            "primary" if active_highlight_id == "all" else active_highlight_id,
+        )
+        if selected_route_id is None or selected_route_obj is None:
+            st.error("No usable route is available for display.")
+            render_safety_disclaimer()
+            return
+        selected_display_route_id = selected_route_obj.get(
+            "alias_of",
+            selected_route_id,
         )
 
         # Top Metric Cards
         prim = routes_dict.get("primary", {})
+        distinct_destination_routes = count_distinct_destination_routes(routes_dict)
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Shortest Distance", f"{prim.get('distance_km', 'N/A')} km", "Primary Route")
+            st.metric(
+                "Shortest Distance",
+                f"{prim.get('distance_km', 'N/A')} km",
+                "Shortest among returned routes",
+            )
         with col2:
             travel_time = prim.get("duration_mins")
             st.metric(
@@ -2830,12 +2858,22 @@ def main():
                 "No local speed model" if offline_mode else "OpenStreetMap Speed Model",
             )
         with col3:
-            st.metric("Candidate Routes", f"{len(routes_dict)} Generated", "Distinct corridors")
+            st.metric(
+                "Distinct Destination Routes",
+                distinct_destination_routes,
+                "Provider/local road geometries",
+            )
         with col4:
             if "hazard_avoid" in routes_dict:
                 st.metric("Hazard Status", "Avoidance Active 🛡️", f"{hazard_radius_m}m Buffer")
             else:
                 st.metric("Hazard Status", "Unknown", "No verified closure data")
+        if not offline_mode and distinct_destination_routes == 1:
+            st.info(
+                "The routing provider returned one distinct road route for these "
+                "locations. No additional real-world alternatives were supplied; "
+                "AEGIS does not fabricate them."
+            )
 
         # Tabs: Map, Turn-by-Turn, Hazard Details
         tab_map, tab_turns, tab_safety = st.tabs([
@@ -2852,7 +2890,6 @@ def main():
                 shelter_info=shelter_info,
             )
 
-            selected_route_obj = routes_dict[selected_route_id]
             st.caption(
                 (
                     f"Navigation route: **{selected_route_obj['name']}**. "
@@ -2865,6 +2902,15 @@ def main():
                     )
                 )
             )
+            if selected_route_obj.get("alias_of"):
+                aliased_route = routes_dict.get(
+                    selected_route_obj["alias_of"], {}
+                )
+                st.caption(
+                    "This hazard-avoiding selection reuses the "
+                    f"**{aliased_route.get('name', 'existing route')}** geometry; "
+                    "the map draws that corridor once."
+                )
             if offline_mode:
                 st.markdown(
                     render_local_map_svg(
@@ -2944,9 +2990,11 @@ def main():
 
         with tab_turns:
             st.subheader("Turn-by-Turn Navigation Guide")
+            route_names = [route["name"] for route in routes_dict.values()]
             inspect_route_name = st.selectbox(
                 "Select Route to Inspect Steps:",
-                options=[r["name"] for r in routes_dict.values()],
+                options=route_names,
+                index=route_names.index(selected_route_obj["name"]),
             )
             selected_route_obj = next((r for r in routes_dict.values() if r["name"] == inspect_route_name), None)
 
@@ -3009,7 +3057,7 @@ def main():
                     "OSRM · OpenStreetMap road data",
                 ),
                 "accent": route.get("color", "#0f766e"),
-                "selected": route_id == selected_route_id,
+                "selected": route_id == selected_display_route_id,
                 "metrics": [
                     ("Road distance", f"{route['distance_km']} km"),
                     (
@@ -3041,6 +3089,7 @@ def main():
                 ],
             }
             for route_id, route in routes_dict.items()
+            if not route.get("alias_of")
         ])
 
         # Retain the full comparison details in a compact disclosure.

@@ -270,7 +270,7 @@ def get_real_road_route(
     timeout: int = 12,
 ) -> Dict:
     """
-    Calculates the primary route and up to two provider-returned alternatives
+    Calculates the primary route and up to three provider-returned alternatives
     along the actual OpenStreetMap road network using OSRM.
 
     Args:
@@ -320,7 +320,7 @@ def get_real_road_route(
 
         parsed_routes = [
             _normalize_osrm_route(route)
-            for route in data["routes"][:3]
+            for route in data["routes"][:4]
         ]
         parsed_routes = [route for route in parsed_routes if route is not None]
         if not parsed_routes:
